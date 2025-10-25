@@ -1,0 +1,287 @@
+/* Paleta de Cores (Dark Mode) */
+:root {
+    --color-bg-dark: #1e1e2f;          /* Fundo principal escuro */
+    --color-card-dark: #27293d;        /* Fundo do cartão/container */
+    --color-text-light: #f0f0f5;       /* Cor do texto claro */
+    --color-text-secondary: #a9a9b9;   /* Cor do texto secundário/ajuda */
+    --color-primary: #8a48ff;          /* Cor primária (Botões de Ação) - Roxo/Violeta */
+    --color-primary-hover: #a164ff;    /* Cor primária ao passar o mouse */
+    --color-success: #3cb864;          /* Cor de sucesso (Pagamento Aprovado) */
+    --color-error: #e54c4c;            /* Cor de erro */
+    --color-border: #3c3e53;           /* Cor da borda sutil */
+}
+
+/* ---------------------------------- */
+/* BASE E TIPOGRAFIA */
+/* ---------------------------------- */
+
+body {
+    font-family: 'Poppins', sans-serif;
+    background-color: var(--color-bg-dark);
+    color: var(--color-text-light);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    margin: 0;
+    padding: 20px;
+    box-sizing: border-box;
+}
+
+h1, h2, h3, h4 {
+    color: var(--color-text-light);
+    font-weight: 600;
+}
+
+p {
+    color: var(--color-text-secondary);
+}
+
+/* ---------------------------------- */
+/* CONTAINER PRINCIPAL E CARD */
+/* ---------------------------------- */
+
+.card-form-container {
+    background-color: var(--color-card-dark);
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5); /* Sombra mais intensa para destacar o 'dark' */
+    padding: 30px;
+    width: 100%;
+    max-width: 450px;
+}
+
+/* ---------------------------------- */
+/* INPUTS E CAMPOS DE FORMULÁRIO */
+/* ---------------------------------- */
+
+label {
+    display: block;
+    margin-bottom: 5px;
+    margin-top: 15px;
+    font-weight: 500;
+    color: var(--color-text-light);
+}
+
+input[type="text"],
+input[type="email"],
+select {
+    width: 100%;
+    padding: 12px;
+    margin-bottom: 10px;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    background-color: var(--color-bg-dark); /* Fundo dos inputs levemente mais escuro */
+    color: var(--color-text-light);
+    box-sizing: border-box;
+    transition: border-color 0.3s, box-shadow 0.3s;
+}
+
+input[type="text"]:focus,
+input[type="email"]:focus,
+select:focus {
+    border-color: var(--color-primary);
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(138, 72, 255, 0.3); /* Sombra suave ao focar */
+}
+
+/* ---------------------------------- */
+/* BOTÕES DE AÇÃO */
+/* ---------------------------------- */
+
+button:not(.btn-clean):not(.btn-secondary) {
+    width: 100%;
+    padding: 12px 20px;
+    margin-top: 20px;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--color-text-light);
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    background-color: var(--color-primary);
+    transition: background-color 0.3s, opacity 0.3s;
+}
+
+button:not(.btn-clean):not(.btn-secondary):hover:not(:disabled) {
+    background-color: var(--color-primary-hover);
+}
+
+button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.btn-prev {
+    background-color: var(--color-border);
+    margin-top: 10px;
+    color: var(--color-text-secondary);
+}
+
+.btn-prev:hover {
+    background-color: #555877;
+}
+
+.btn-clean {
+    width: 100%;
+    background: none;
+    border: none;
+    color: var(--color-text-secondary);
+    margin-top: 20px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: color 0.3s;
+}
+
+.btn-clean:hover {
+    color: var(--color-text-light);
+}
+
+/* ---------------------------------- */
+/* ESTRUTURA DOS PASSOS */
+/* ---------------------------------- */
+
+.step {
+    display: none;
+    animation: fadeIn 0.5s;
+}
+
+.step.active {
+    display: block;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.step-header {
+    margin-bottom: 25px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid var(--color-border);
+}
+
+/* ---------------------------------- */
+/* ITENS DE MENU E SUMÁRIO */
+/* ---------------------------------- */
+
+.menu-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px dashed var(--color-border);
+}
+
+.menu-item:last-of-type {
+    border-bottom: none;
+}
+
+.item-qty {
+    width: 80px;
+}
+
+.total-summary {
+    background-color: var(--color-bg-dark);
+    padding: 15px;
+    margin-top: 20px;
+    border-radius: 8px;
+    border: 1px solid var(--color-primary);
+}
+
+.total-summary p {
+    margin: 5px 0;
+    font-size: 1.1em;
+    font-weight: 600;
+    color: var(--color-text-light);
+}
+
+.total-summary span {
+    color: var(--color-primary-hover);
+}
+
+/* ---------------------------------- */
+/* PAGAMENTO PIX */
+/* ---------------------------------- */
+
+#area-pix {
+    padding: 20px;
+    margin-top: 20px;
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    background-color: var(--color-bg-dark);
+    text-align: center;
+}
+
+#pix-status {
+    color: var(--color-primary); /* Status em cor de destaque */
+    font-size: 1.3em;
+    margin-top: 0;
+    margin-bottom: 15px;
+}
+
+#qr-code-img {
+    width: 180px;
+    height: 180px;
+    border: 5px solid var(--color-card-dark); /* Borda para destacar */
+    border-radius: 4px;
+    margin-bottom: 15px;
+}
+
+.copia-cola-area {
+    display: flex;
+    gap: 10px;
+    margin-top: 5px;
+}
+
+#chave-pix {
+    flex-grow: 1;
+    font-size: 0.9em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis; /* ... em vez de cortar */
+}
+
+.btn-secondary {
+    padding: 8px 15px;
+    font-size: 14px;
+    font-weight: 500;
+    background-color: var(--color-primary);
+    color: var(--color-text-light);
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background-color 0.3s;
+    flex-shrink: 0; /* Impede o botão de diminuir */
+}
+
+.btn-secondary:hover {
+    background-color: var(--color-primary-hover);
+}
+
+/* Mensagens de Status */
+.success-message {
+    padding: 15px;
+    border-radius: 6px;
+    background-color: rgba(60, 184, 100, 0.15); /* Fundo verde transparente */
+    border: 1px solid var(--color-success);
+    color: var(--color-success);
+    margin-top: 15px;
+}
+
+/* Loading Spinner */
+.loading-spinner {
+    color: var(--color-primary);
+    font-weight: 500;
+    padding: 10px;
+    animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.5; }
+    100% { opacity: 1; }
+}
+
+.hidden {
+    display: none !important;
+}
