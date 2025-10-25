@@ -1,7 +1,5 @@
 <?php
-// Opcional, mas boa prática: se você precisasse de configurações PHP ou da SDK aqui
-// require 'vendor/autoload.php'; 
-
+// Arquivo: index.php
 // O restante do arquivo continua sendo HTML puro,
 // mas agora o servidor o processará como PHP, permitindo inclusão de lógica futura.
 ?>
@@ -79,7 +77,7 @@
                         <option value="5">5</option>
                     </select>
                 </div>
-
+                
                 <div class="menu-item" data-price="18.00">
                     <label for="qtd_suino">Suíno</label>
                     <select id="qtd_suino" name="qtd_suino" class="item-qty" data-name="Suíno">
@@ -91,7 +89,6 @@
                         <option value="5">5</option>
                     </select>
                 </div>
-
                 <div class="menu-item" data-price="18.00">
                     <label for="qtd_frango">Frango</label>
                     <select id="qtd_frango" name="qtd_frango" class="item-qty" data-name="Frango">
@@ -103,7 +100,6 @@
                         <option value="5">5</option>
                     </select>
                 </div>
-
                 <div class="menu-item" data-price="18.00">
                     <label for="qtd_bov_suino">Bovino + Suíno (Misto)</label>
                     <select id="qtd_bov_suino" name="qtd_bov_suino" class="item-qty" data-name="Bovino + Suíno">
@@ -160,49 +156,41 @@
                     <p>Total a Pagar: <span id="total-final-pagamento">R$ 0,00</span></p>
                 </div>
 
-
-                <label for="forma_pagamento">Selecione a Forma de Pagamento</label>
+                <label for="forma-pagamento">Selecione a Forma de Pagamento</label>
                 <select id="forma-pagamento" name="forma_pagamento" required>
                     <option value="" selected disabled>-- Selecione --</option>
-                    
-                    <option value="pix">Pix</option>
+                    <option value="pix_cartao">Pix, Cartão</option> 
+                    <option value="debito">Débito</option>
+                    <option value="credito">Crédito</option>
                     <option value="dinheiro">Dinheiro</option>
-                    <option value="cartao_credito">Cartão de Crédito</option>
-                    <option value="cartao_debito">Cartão de Débito</option>
-</select>
+                </select>
 
-                <div id="opcoes-dinheiro" class="hidden">
-                    <label>
-                        <input type="checkbox" name="levar_troco" value="sim">
-                        Preciso de troco (O entregador entrará em contato para o valor).
-                    </label>
+                <div id="area-pix-cartao" class="payment-option hidden">
+                    <p class="payment-message">Você será redirecionado para o Mercado Pago para pagar com **PIX, Cartão de Crédito ou Débito**.</p>
                 </div>
 
-                <div id="opcoes-cartao" class="hidden payment-message">
-                    <p>✅ O entregador levará a maquininha.</p>
-                </div>
-
-                <div id="area-pix" class="payment-option hidden">
-                    <p>Você será redirecionado para a página segura do Mercado Pago para finalizar o pagamento PIX.</p>
-                    <button type="button" id="btn-pagar-pix" class="btn btn-primary" style="display: none;">Pagar com PIX no Mercado Pago</button>
+                <div id="opcoes-cartao" class="payment-option hidden">
+                    <p class="payment-message">✅ O entregador levará a maquininha para pagamento no Cartão.</p>
                 </div>
 
                 <div id="opcoes-dinheiro" class="payment-option hidden">
-                    </div>
-                <div id="opcoes-cartao" class="payment-option hidden">
-                    <p>Pagamento será realizado na entrega via máquina.</p>
+                    <label>
+                        <input type="checkbox" id="preciso-troco" name="levar_troco" value="sim">
+                        Preciso de troco (O entregador entrará em contato para o valor).
+                    </label>
                 </div>
-
-                <button type="submit" id="btn-enviar" class="btn btn-success" disabled>Enviar Pedido</button>
-
+                
                 <button type="button" class="btn-prev">Voltar</button>
-                <button type="submit" id="btn-enviar" class="btn-submit" disabled>Enviar Pedido</button>
+                
+                <button type="button" id="btn-pagar-checkout" class="btn-submit btn-primary" style="display: none;">Pagar com Pix/Cartão no Mercado Pago</button>
+                
+                <button type="submit" id="btn-enviar" class="btn-submit" disabled>Finalizar Pedido (Pagamento na Entrega)</button>
             </div>
 
         </div>
     </form>
     
-    <button type="button" id="btn-clean" class="btn-clean">Limpar Tudo</button>
+    <button type="button" id="btn-clean" class="btn-clean" style="display: none;">Limpar Tudo</button>
 </div>
 
 <script src="script.js"></script>

@@ -6,6 +6,7 @@ let currentStep = 1;
 const totalInput = document.getElementById('total-valor-final'); 
 let pixMonitorInterval = null; 
 let externalReferenceId = null; 
+const btnCleanGlobal = document.getElementById('btn-clean'); // Referência ao botão global
 
 // =========================================================
 // FUNÇÕES DE UTILIDADE E MÁSCARA
@@ -37,7 +38,10 @@ function validarPasso2() {
                     email.match(regexEmail) && 
                     regexTelefone.test(telefone); 
     
-    document.querySelector('.step[data-step="2"] .btn-next').disabled = !isValid;
+    const nextButton = document.querySelector('.step[data-step="2"] .btn-next');
+    if (nextButton) {
+        nextButton.disabled = !isValid;
+    }
 }
 
 function updateStep(newStep) {
@@ -45,59 +49,78 @@ function updateStep(newStep) {
         clearInterval(pixMonitorInterval); 
     }
     
-    document.querySelector(`.step[data-step="${currentStep}"]`).classList.remove('active');
-    document.querySelector(`.step[data-step="${newStep}"]`).classList.add('active');
-    currentStep = newStep;
+    // Controle do botão Limpar Tudo (Visível apenas do Passo 2 ao 5)
+    if (btnCleanGlobal) {
+        btnCleanGlobal.style.display = (newStep > 1 && newStep <= 5) ? 'block' : 'none';
+    }
+    
+    // Oculta/Mostra os passos
+    if (currentStep >= 1 && currentStep <= 5) {
+        const oldStepElement = document.querySelector(`.step[data-step="${currentStep}"]`);
+        if(oldStepElement) oldStepElement.classList.remove('active');
+    }
+    if (newStep >= 1 && newStep <= 5) {
+        const newStepElement = document.querySelector(`.step[data-step="${newStep}"]`);
+        if(newStepElement) newStepElement.classList.add('active');
+        currentStep = newStep;
+    }
+    
     window.scrollTo(0, 0); 
     
     if (newStep === 5) {
         preencherRevisao();
-        // Garante que o estado de pagamento é avaliado ao entrar no passo 5
-        handlePaymentChange(document.getElementById('forma-pagamento').value);
+        const formaPagamentoSelect = document.getElementById('forma-pagamento');
+        if (formaPagamentoSelect) {
+            handlePaymentChange(formaPagamentoSelect.value);
+        }
     }
 }
 
 /**
- * Funçao auxiliar que encapsula a lógica de mudança de pagamento
+ * Funçao auxiliar que encapsula a lógica de mudança de pagamento no Passo 5
  */
 function handlePaymentChange(forma) {
-    const isPix = forma === 'pix';
+    const isCheckoutPro = forma === 'pix_cartao';
     const isDinheiro = forma === 'dinheiro';
-    const isCartao = forma.includes('cartao');
+    const isCartao = forma === 'credito' || forma === 'debito';
     const valorTotal = parseFloat(totalInput.value);
 
-    // Esconde todas as áreas de pagamento
-    document.getElementById('area-pix').classList.add('hidden');
+    // Oculta todas as áreas de opção
+    document.getElementById('area-pix-cartao').classList.add('hidden');
     document.getElementById('opcoes-dinheiro').classList.add('hidden');
     document.getElementById('opcoes-cartao').classList.add('hidden');
-
-    const btnEnviar = document.getElementById('btn-enviar');
-    const btnPagarPix = document.getElementById('btn-pagar-pix');
-
-    // Estado padrão dos botões
-    btnEnviar.style.display = 'block'; 
-    btnPagarPix.style.display = 'none'; 
     
-    // Se a opção for "-- Selecione --" ou valor zero, desabilita o envio
+    const btnEnviar = document.getElementById('btn-enviar');
+    const btnPagarCheckout = document.getElementById('btn-pagar-checkout'); // Novo ID
+
+    // Reset de exibição dos botões
+    if (btnEnviar) {
+        btnEnviar.style.display = 'block'; 
+        btnEnviar.disabled = true; // Desabilita por padrão
+    }
+    if (btnPagarCheckout) btnPagarCheckout.style.display = 'none'; 
+    
+    // Se a opção for "-- Selecione --" ou valor zero
     if (forma === "" || valorTotal <= 0) {
-        btnEnviar.disabled = true; 
-        if (pixMonitorInterval) clearInterval(pixMonitorInterval);
         return;
     }
     
     // Lógica para cada forma de pagamento
-    if (isPix) {
-        document.getElementById('area-pix').classList.remove('hidden');
-        btnEnviar.style.display = 'none'; // Esconde o botão Enviar padrão
-        btnPagarPix.style.display = 'block'; // Mostra o botão Pagar com PIX
-        btnPagarPix.disabled = false;
-        if (pixMonitorInterval) clearInterval(pixMonitorInterval); 
+    if (isCheckoutPro) {
+        document.getElementById('area-pix-cartao').classList.remove('hidden');
+        if (btnEnviar) btnEnviar.style.display = 'none'; // Esconde o botão Enviar
+        if (btnPagarCheckout) {
+            btnPagarCheckout.style.display = 'block'; // Mostra o botão Checkout Pro
+            btnPagarCheckout.disabled = false;
+        }
 
-    } else if (isDinheiro || isCartao) {
-        if (isDinheiro) document.getElementById('opcoes-dinheiro').classList.remove('hidden');
-        if (isCartao) document.getElementById('opcoes-cartao').classList.remove('hidden');
-        btnEnviar.disabled = false; 
-        if (pixMonitorInterval) clearInterval(pixMonitorInterval); 
+    } else if (isDinheiro) {
+        document.getElementById('opcoes-dinheiro').classList.remove('hidden');
+        if (btnEnviar) btnEnviar.disabled = false; // Habilita Enviar
+        
+    } else if (isCartao) {
+        document.getElementById('opcoes-cartao').classList.remove('hidden');
+        if (btnEnviar) btnEnviar.disabled = false; // Habilita Enviar
     } 
 }
 
@@ -110,7 +133,10 @@ function calcularTotal() {
     document.querySelectorAll('.item-qty').forEach(select => {
         const qty = parseInt(select.value, 10) || 0; 
         const itemElement = select.closest('.menu-item');
-        const price = parseFloat(itemElement.getAttribute('data-price')) || 0; 
+        
+        const priceAttr = itemElement ? itemElement.getAttribute('data-price') : null;
+        const price = parseFloat(priceAttr) || 0; 
+        
         const name = select.getAttribute('data-name');
         
         if (qty > 0) {
@@ -122,14 +148,16 @@ function calcularTotal() {
     });
 
     const btnRevisao = document.getElementById('btn-revisao');
-    btnRevisao.disabled = totalItens <= 0;
+    if (btnRevisao) btnRevisao.disabled = totalItens <= 0;
 
-    document.getElementById('total-itens').textContent = totalItens;
-    document.getElementById('total-valor-display').textContent = `R$ ${total.toFixed(2).replace('.', ',')}`;
-    document.getElementById('total-final-pagamento').textContent = `R$ ${total.toFixed(2).replace('.', ',')}`;
+    // Atualiza exibições
+    if (document.getElementById('total-itens')) document.getElementById('total-itens').textContent = totalItens;
+    if (document.getElementById('total-valor-display')) document.getElementById('total-valor-display').textContent = `R$ ${total.toFixed(2).replace('.', ',')}`;
+    if (document.getElementById('total-final-pagamento')) document.getElementById('total-final-pagamento').textContent = `R$ ${total.toFixed(2).replace('.', ',')}`;
 
-    document.getElementById('total_itens_final').value = total.toFixed(2);
-    document.getElementById('total-valor-final').value = total.toFixed(2);
+    // Atualiza campos escondidos
+    if (document.getElementById('total_itens_final')) document.getElementById('total_itens_final').value = totalItens;
+    if (document.getElementById('total-valor-final')) document.getElementById('total-valor-final').value = total.toFixed(2);
     
     return items;
 }
@@ -137,6 +165,8 @@ function calcularTotal() {
 function preencherRevisao() {
     const items = calcularTotal(); 
     const revisaoDiv = document.getElementById('revisao-itens');
+    if (!revisaoDiv) return;
+    
     revisaoDiv.innerHTML = '<h3>Seu Pedido:</h3>';
     
     if (items.length === 0) {
@@ -146,6 +176,8 @@ function preencherRevisao() {
     
     items.forEach(item => {
         const p = document.createElement('p');
+        // Usa a cor do texto secundário, assumindo que ela existe no style.css
+        p.style.color = 'var(--color-text-secondary)'; 
         p.textContent = `${item.qty}x ${item.name} - R$ ${item.subtotal.replace('.', ',')}`;
         revisaoDiv.appendChild(p);
     });
@@ -157,9 +189,11 @@ function preencherRevisao() {
 // =========================================================
 
 async function gerarCheckoutPro() {
-    const btnPagarPix = document.getElementById('btn-pagar-pix');
-    btnPagarPix.disabled = true;
-    btnPagarPix.textContent = 'Gerando link de pagamento...';
+    const btnPagarCheckout = document.getElementById('btn-pagar-checkout');
+    if (!btnPagarCheckout) return;
+    
+    btnPagarCheckout.disabled = true;
+    btnPagarCheckout.textContent = 'Gerando link de pagamento...';
     
     const valor = parseFloat(document.getElementById('total-valor-final').value);
     const nome = document.getElementById('nome').value;
@@ -168,8 +202,8 @@ async function gerarCheckoutPro() {
     
     if (valor <= 0) {
         alert('O total do pedido é zero. Adicione itens.');
-        btnPagarPix.disabled = false;
-        btnPagarPix.textContent = 'Pagar com PIX no Mercado Pago';
+        btnPagarCheckout.disabled = false;
+        btnPagarCheckout.textContent = 'Pagar com Pix/Cartão no Mercado Pago';
         return;
     }
 
@@ -178,7 +212,7 @@ async function gerarCheckoutPro() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
-                action: 'gerar_checkout_pro', // NOVA AÇÃO NO PHP
+                action: 'gerar_checkout_pro',
                 valor: valor, 
                 nome: nome, 
                 email: email,
@@ -189,25 +223,72 @@ async function gerarCheckoutPro() {
         const data = await response.json();
 
         if (data.success) {
-            externalReferenceId = data.external_reference; // Salva a ref gerada
+            externalReferenceId = data.external_reference; 
             // REDIRECIONAMENTO PARA O MERCADO PAGO
             window.location.href = data.redirect_url;
             
         } else {
-            // Se o backend PHP retornou um JSON com success: false
             alert('Erro ao gerar o Checkout Pro: ' + data.message);
-            btnPagarPix.disabled = false;
-            btnPagarPix.textContent = 'Pagar com PIX no Mercado Pago';
+            btnPagarCheckout.disabled = false;
+            btnPagarCheckout.textContent = 'Pagar com Pix/Cartão no Mercado Pago';
         }
 
     } catch (error) {
         console.error('Erro na requisição AJAX (gerar_checkout_pro):', error);
-        // Este catch pega erros de rede ou servidor (PHP parou)
         alert('Erro de rede ou servidor ao gerar pagamento. Tente novamente.');
-        btnPagarPix.disabled = false;
-        btnPagarPix.textContent = 'Pagar com PIX no Mercado Pago';
+        btnPagarCheckout.disabled = false;
+        btnPagarCheckout.textContent = 'Pagar com Pix/Cartão no Mercado Pago';
     }
 }
+
+// =========================================================
+// LÓGICA DE CONFIRMAÇÃO FINAL
+// =========================================================
+function showConfirmationPage(formaPagamento) {
+    const form = document.getElementById('pedidoForm');
+    if (!form) return;
+
+    // Oculta o formulário
+    form.style.display = 'none'; 
+    document.querySelectorAll('.step').forEach(el => el.classList.remove('active'));
+
+    // Oculta o botão Limpar Tudo
+    if (btnCleanGlobal) {
+        btnCleanGlobal.style.display = 'none';
+    }
+
+    const container = document.querySelector('.card-form-container'); 
+    
+    const confirmationDiv = document.createElement('div');
+    confirmationDiv.className = 'confirmation-page'; 
+    confirmationDiv.style.textAlign = 'center';
+
+    let title = 'Pedido Recebido com Sucesso!';
+    let message = '';
+    
+    if (formaPagamento === 'pix_cartao') {
+        title = 'Pagamento Confirmado e Pedido Efetuado!';
+        message = `<p style="color: var(--color-success); font-weight: 600;">Seu pagamento foi aprovado pelo Mercado Pago. Seu pedido será preparado imediatamente.</p>`;
+    } else {
+        const trocoNeeded = document.getElementById('preciso-troco') && document.getElementById('preciso-troco').checked;
+        let trocoMessage = trocoNeeded ? ` (O entregador entrará em contato para combinar o troco)` : '';
+        
+        message = `<p>Seu pedido foi registrado e será preparado.</p>
+                   <p>O pagamento de **R$ ${totalInput.value.replace('.', ',')}** será feito na entrega via **${formaPagamento.toUpperCase().replace('_', ' ')}**${trocoMessage}.</p>`;
+    }
+    
+    message += `<p>Obrigado pela preferência. Entraremos em contato para confirmar o prazo de entrega.</p>`;
+
+    confirmationDiv.innerHTML = `
+        <h2 style="color: var(--color-primary); margin-bottom: 20px;">${title}</h2>
+        ${message}
+        <button onclick="window.location.reload()" class="btn-submit" style="margin-top: 20px;">Fazer Novo Pedido</button>
+    `;
+
+    container.appendChild(confirmationDiv);
+    currentStep = 6; 
+}
+
 
 // =========================================================
 // INICIALIZAÇÃO E EVENT LISTENERS
@@ -220,23 +301,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const statusMP = urlParams.get('status');
     const refId = urlParams.get('ref');
 
-    if (statusMP) {
-        let msg = '';
+    if (statusMP && refId) {
         if (statusMP === 'success') {
-            msg = '✅ Pagamento Aprovado! Seu pedido será enviado para a cozinha.';
+            showConfirmationPage('pix_cartao'); // Mostra resumo pós-pagamento MP
         } else if (statusMP === 'pending') {
-            msg = '⏳ Pagamento Pendente. Estamos aguardando a confirmação do PIX.';
+             alert('⏳ Pagamento Pendente. Aguarde a confirmação do PIX.');
         } else if (statusMP === 'failure') {
-            msg = '❌ O pagamento falhou ou foi cancelado. Por favor, tente novamente ou escolha outra forma de pagamento.';
+             alert('❌ O pagamento falhou ou foi cancelado. Por favor, tente novamente ou escolha outra forma de pagamento.');
         }
-        
-        alert(msg);
-        
-        // Limpa os parâmetros da URL após o alerta
         history.replaceState(null, '', window.location.pathname);
     }
-    // ------------------------------------------------------------------
-
+    
     // --- Navegação ---
     document.querySelectorAll('.btn-next').forEach(button => {
         button.addEventListener('click', () => updateStep(currentStep + 1));
@@ -247,9 +322,13 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // --- Validação e Máscara ---
-    document.getElementById('nome').addEventListener('input', validarPasso2);
-    document.getElementById('email').addEventListener('input', validarPasso2);
-    document.getElementById('telefone').addEventListener('input', function(e) {
+    const nomeInput = document.getElementById('nome');
+    const emailInput = document.getElementById('email');
+    const telefoneInput = document.getElementById('telefone');
+    
+    if (nomeInput) nomeInput.addEventListener('input', validarPasso2);
+    if (emailInput) emailInput.addEventListener('input', validarPasso2);
+    if (telefoneInput) telefoneInput.addEventListener('input', function(e) {
         e.target.value = maskTelefone(e.target.value);
         validarPasso2(); 
     });
@@ -260,7 +339,10 @@ document.addEventListener('DOMContentLoaded', () => {
         select.addEventListener('change', () => {
              if (currentStep === 5) {
                  preencherRevisao();
-                 handlePaymentChange(document.getElementById('forma-pagamento').value);
+                 const formaPagamentoSelect = document.getElementById('forma-pagamento');
+                 if (formaPagamentoSelect) {
+                     handlePaymentChange(formaPagamentoSelect.value);
+                 }
              }
         });
     });
@@ -268,37 +350,42 @@ document.addEventListener('DOMContentLoaded', () => {
     calcularTotal(); 
 
     // --- Lógica de Pagamento (Passo 5) ---
-    document.getElementById('forma-pagamento').addEventListener('change', (e) => {
-        handlePaymentChange(e.target.value);
-    });
+    const formaPagamentoSelect = document.getElementById('forma-pagamento');
+    if (formaPagamentoSelect) {
+        formaPagamentoSelect.addEventListener('change', (e) => {
+            handlePaymentChange(e.target.value);
+        });
+    }
     
-    // NOVO: Listener para o botão Pagar com PIX
-    document.getElementById('btn-pagar-pix').addEventListener('click', gerarCheckoutPro);
+    // Listener para o botão Pagar com PIX/Cartão
+    const btnPagarCheckout = document.getElementById('btn-pagar-checkout');
+    if (btnPagarCheckout) {
+        btnPagarCheckout.addEventListener('click', gerarCheckoutPro);
+    }
 
-    // --- Submissão Final do Formulário (Dinheiro/Cartão) ---
+    // --- Submissão Final do Formulário (Dinheiro/Cartão na entrega) ---
     document.getElementById('pedidoForm').addEventListener('submit', async (e) => {
         e.preventDefault();
         
         const formaPagamento = document.getElementById('forma-pagamento').value;
         const btnEnviar = document.getElementById('btn-enviar');
 
-        // Impede submissão se for PIX (pois deve ser feito via botão dedicado)
-        if (formaPagamento === 'pix') {
-             alert('Para PIX, use o botão "Pagar com PIX no Mercado Pago".');
+        if (formaPagamento === 'pix_cartao') {
+             alert('Por favor, use o botão "Pagar com Pix/Cartão no Mercado Pago" para o pagamento online.');
              return;
         }
-        // Impede submissão se nada foi selecionado
         if (formaPagamento === "") {
              return;
         }
 
-        btnEnviar.disabled = true;
-        btnEnviar.textContent = 'Enviando...';
+        if (btnEnviar) {
+            btnEnviar.disabled = true;
+            btnEnviar.textContent = 'Enviando...';
+        }
         
         const pedidoData = {
             action: 'finalizar_pedido',
             forma_pagamento: formaPagamento,
-            external_reference: externalReferenceId, // Caso seja PIX já pago, usa a ref
             nome: document.getElementById('nome').value,
             email: document.getElementById('email').value,
             telefone: document.getElementById('telefone').value,
@@ -315,32 +402,42 @@ document.addEventListener('DOMContentLoaded', () => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(pedidoData)
             });
+            
             const finalData = await response.json();
 
             if (finalData.success) {
-                alert('🎉 Pedido Recebido com Sucesso! Um e-mail/contato de confirmação será enviado em breve.');
-                window.location.reload(); 
+                // Se der sucesso, mostra a página de confirmação
+                showConfirmationPage(formaPagamento); 
             } else {
                 alert('Erro ao finalizar pedido: ' + finalData.message);
-                btnEnviar.disabled = false;
-                btnEnviar.textContent = 'Enviar Pedido';
+                if (btnEnviar) {
+                    btnEnviar.disabled = false;
+                    btnEnviar.textContent = 'Finalizar Pedido (Pagamento na Entrega)';
+                }
             }
         } catch (error) {
             console.error('Erro na requisição AJAX (finalizar_pedido):', error);
-            alert('Erro de rede ao finalizar pedido. Tente novamente.');
-            btnEnviar.disabled = false;
-            btnEnviar.textContent = 'Enviar Pedido';
+            alert('Erro de rede ou servidor ao finalizar pedido. Tente novamente.');
+            if (btnEnviar) {
+                btnEnviar.disabled = false;
+                btnEnviar.textContent = 'Finalizar Pedido (Pagamento na Entrega)';
+            }
         }
     });
 
-    // --- Botão Limpar Pedido ---
-    document.getElementById('btn-clean').addEventListener('click', () => {
-        if (pixMonitorInterval) {
-            clearInterval(pixMonitorInterval);
-        }
-        window.location.reload();
-    });
+    // --- Botão Limpar Pedido (Global) ---
+    if (btnCleanGlobal) {
+        btnCleanGlobal.addEventListener('click', () => {
+            if (confirm("Tem certeza que deseja limpar todos os dados do pedido?")) {
+                if (pixMonitorInterval) {
+                    clearInterval(pixMonitorInterval);
+                }
+                window.location.reload();
+            }
+        });
+    }
 
+    // Inicia no primeiro passo e valida o passo 2
     updateStep(1);
     validarPasso2(); 
 });

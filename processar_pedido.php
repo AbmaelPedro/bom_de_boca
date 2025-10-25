@@ -12,9 +12,14 @@ use MercadoPago\MercadoPagoConfig;
 // Define o cabeçalho para JSON
 header('Content-Type: application/json');
 
-// ====================================================
+// Desativa a exibição de erros críticos na saída para evitar JSON inválido
+ini_set('display_errors', 0);
+ini_set('display_startup_errors', 0);
+error_reporting(E_ALL);
+
+// ====================================================\r\n
 // DADOS DE CONFIGURAÇÃO OBRIGATÓRIOS
-// ====================================================
+// ====================================================\r\n
 
 // Seu Access Token (Chave Privada)
 MercadoPagoConfig::setAccessToken('APP_USR-8765a7f1-8cd0-4412-a9d6-734e07bbe088'); 
@@ -25,201 +30,221 @@ $NOTIFICATION_URL = 'http://bomdeboca.wuaze.com/webhook_mp.php';
 // URL de retorno para o formulário após o pagamento
 $RETURN_URL = 'http://bomdeboca.wuaze.com/index.php';
 
-// ====================================================
-// FUNÇÃO: Salvar Pedido no Banco de Dados
-// ====================================================
+// ====================================================\r\n
+// FUNÇÕES: Salvar Pedidos no Banco de Dados
+// ====================================================\r\n
+
 /**
- * Insere um novo pedido no banco de dados.
+ * Insere um novo pedido na tabela principal 'pedidos_mp'.
+ * @return bool Retorna true em sucesso, false em falha.
  */
-function salvarPedido(mysqli $conn, $valor, $nome, $email, $externalReference, $status, $pagamento) {
+function salvarPedido(mysqli $conn, $valor, $nome, $email, $externalReference, $status, $pagamento, $telefone, $endereco, $referencia) {
+    // AJUSTADO PARA USAR SUA TABELA: pedidos_mp
+    $sql = "INSERT INTO pedidos_mp (external_reference, valor_total, nome_cliente, email_cliente, telefone, endereco, referencia, status, pagamento) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
     
-    // Assume que a tabela pedidos possui as colunas external_reference, valor, nome_cliente, email_cliente, status, forma_pagamento
-    $stmt = $conn->prepare("INSERT INTO pedidos (external_reference, valor, nome_cliente, email_cliente, status, forma_pagamento) VALUES (?, ?, ?, ?, ?, ?)");
-    
+    $stmt = $conn->prepare($sql);
     if (!$stmt) {
-        error_log("Erro na preparação da query SQL: " . $conn->error);
+        error_log("Erro no prepare (salvarPedido): " . $conn->error);
         return false;
     }
 
-    $stmt->bind_param("sdssss", $externalReference, $valor, $nome, $email, $status, $pagamento); 
-    
-    if ($stmt->execute()) {
-        $stmt->close();
-        return true;
-    } else {
-        error_log("Erro ao salvar pedido no BD: " . $stmt->error);
-        $stmt->close();
-        return false;
+    // Assumindo que os campos existem na sua tabela pedidos_mp
+    $stmt->bind_param("sdsssssss", $externalReference, $valor, $nome, $email, $telefone, $endereco, $referencia, $status, $pagamento);
+
+    $success = $stmt->execute();
+    if (!$success) {
+        error_log("Erro ao executar (salvarPedido): " . $stmt->error);
     }
+    
+    $stmt->close();
+    return $success;
 }
 
-// ====================================================
-// PONTO DE ENTRADA: REQUISIÇÃO AJAX
-// ====================================================
+/**
+ * Insere os itens detalhados do pedido na tabela 'pedidos_mp_itens'.
+ * @param array $itens Array de itens do pedido (name, qty, price).
+ * @return bool Retorna true em sucesso, false em falha.
+ */
+function salvarItensPedido(mysqli $conn, $externalReference, array $itens) {
+    if (empty($itens)) {
+        return true; 
+    }
+    
+    $success = true;
+    // AJUSTADO PARA USAR TABELA DE ITENS: pedidos_mp_itens
+    $sql = "INSERT INTO pedidos_mp_itens (external_reference, item_nome, quantidade, preco_unitario) VALUES (?, ?, ?, ?)";
+    $stmt = $conn->prepare($sql);
 
+    if (!$stmt) {
+        error_log("Erro no prepare (salvarItensPedido): " . $conn->error);
+        // O erro de rede/servidor pode estar aqui, se a tabela não existir.
+        return false; 
+    }
+    
+    foreach ($itens as $item) {
+        $itemNome = $item['name'];
+        $quantidade = (int)$item['qty'];
+        $precoUnitario = (float)$item['price'];
+        
+        $stmt->bind_param("ssis", $externalReference, $itemNome, $quantidade, $precoUnitario); 
+        
+        if (!$stmt->execute()) {
+            error_log("Erro ao executar item: " . $stmt->error);
+            $success = false;
+        }
+    }
+    
+    $stmt->close();
+    return $success;
+}
+
+
+// ====================================================\r\n
+// LÓGICA DE REQUISIÇÃO
+// ====================================================\r\n
+
+// Obtém os dados da requisição POST
 $input = file_get_contents('php://input');
 $data = json_decode($input, true);
 
-// Verifica se a decodificação JSON foi bem-sucedida e a ação está definida
 if (!isset($data['action'])) {
-    http_response_code(400); 
-    die(json_encode(['success' => false, 'message' => 'Ação não especificada ou dados de entrada inválidos.']));
+    http_response_code(400);
+    die(json_encode(['success' => false, 'message' => 'Ação não especificada.']));
 }
 
-// ----------------------------------------------------
-// AÇÃO: GERAR CHECKOUT PRO (Cria o link de pagamento - Substitui o gerar_pix)
-// ----------------------------------------------------
-if ($data['action'] === 'gerar_checkout_pro') {
-    
-    $conn = db_connect(); 
-    if (!$conn) {
-        http_response_code(500); 
-        die(json_encode(['success' => false, 'message' => 'Falha na conexão com o banco de dados (db_connect).']));
-    }
+$action = $data['action'];
 
-    $valor = $data['valor'] ?? 0;
-    $nome = $data['nome'] ?? 'Cliente Desconhecido';
-    $email = $data['email'] ?? 'erro_email@bomboca.com'; 
-    $itens_pedido = $data['itens'] ?? [];
-    
-    // 1. Geração de Referência
-    $externalReference = 'PED-' . time() . rand(100, 999); 
-    $titulo_item = count($itens_pedido) . " Itens do Pedido Bom de Boca";
-    
-    // 2. Criação dos Itens para a API do MP (Simplificado)
-    $items_mp = [
-        [
-            "title" => $titulo_item,
-            "quantity" => 1,
-            "unit_price" => (float)number_format($valor, 2, '.', ''),
-            "currency_id" => "BRL",
-        ]
-    ];
-
-    try {
-        $client = new PreferenceClient();
-        
-        $preference = $client->create([
-            "body" => [
-                "items" => $items_mp,
-                "payer" => [
-                    "name" => $nome,
-                    "email" => $email,
-                ],
-                "external_reference" => $externalReference,
-                "notification_url" => $NOTIFICATION_URL,
-                
-                // URLs para o retorno APÓS o pagamento
-                "back_urls" => [
-                    "success" => "{$RETURN_URL}?status=success&ref={$externalReference}",
-                    "failure" => "{$RETURN_URL}?status=failure&ref={$externalReference}",
-                    "pending" => "{$RETURN_URL}?status=pending&ref={$externalReference}",
-                ],
-                // Redireciona imediatamente após sucesso
-                "auto_return" => "approved", 
-            ]
-        ]);
-        
-        // 3. Salvar o pedido no seu BD (Status 'Aguardando MP')
-        if (!salvarPedido($conn, $valor, $nome, $email, $externalReference, 'Aguardando MP', 'pix_checkout')) {
-             // Se falhar ao salvar, notifica no log, mas ainda retorna o link (o webhook pode salvar depois)
-             error_log("AVISO: Falha ao salvar pedido 'Aguardando MP' no BD, mas link gerado.");
-        }
-
-        $conn->close();
-        
-        // Retorna o link para o JavaScript
-        echo json_encode([
-            'success' => true,
-            'redirect_url' => $preference->init_point, 
-            'external_reference' => $externalReference
-        ]);
-        exit;
-
-    } catch (\Exception $e) {
-        $conn->close();
-        // Erro crítico na comunicação com a API (cURL/Token/Firewall)
-        error_log("ERRO CRÍTICO Checkout Pro: " . $e->getMessage());
-        http_response_code(500); 
-        die(json_encode(['success' => false, 'message' => 'Erro crítico ao criar pagamento. Verifique o Access Token e o Firewall do seu servidor.']));
-    }
-} 
-
-// ----------------------------------------------------
-// AÇÃO: VERIFICAR STATUS DO PEDIDO (Polling)
-// ----------------------------------------------------
-elseif ($data['action'] === 'check_pix_status') {
-    $conn = db_connect(); 
-    $externalReference = $data['external_reference'] ?? null; 
-
-    $status_pedido = 'Erro';
-
-    if ($conn && $externalReference) {
-        $stmt = $conn->prepare("SELECT status FROM pedidos WHERE external_reference = ?");
-        $stmt->bind_param("s", $externalReference);
-        $stmt->execute();
-        $result = $stmt->get_result();
-
-        if ($result->num_rows > 0) {
-            $row = $result->fetch_assoc();
-            $status_pedido = $row['status'];
-        }
-        $stmt->close();
-        $conn->close(); 
-    }
-    
-    echo json_encode(['status' => $status_pedido]);
-    exit;
-}
-
-// ----------------------------------------------------
-// AÇÃO: SUBMISSÃO FINAL DO FORMULÁRIO (Dinheiro/Cartão)
-// ----------------------------------------------------
-elseif ($data['action'] === 'finalizar_pedido') {
+// ====================================================\r\n
+// AÇÃO: GERAR CHECKOUT PRO (PIX, CARTÃO)
+// ====================================================\r\n
+if ($action === 'gerar_checkout_pro') {
     
     $conn = db_connect();
     
     if (!$conn) {
-        http_response_code(500); 
-        die(json_encode(['success' => false, 'message' => 'Falha na conexão com o BD ao finalizar pedido.']));
+        http_response_code(500);
+        die(json_encode(['success' => false, 'message' => 'Falha na conexão com o BD ao gerar checkout.']));
+    }
+
+    $externalReference = 'MP-' . time() . rand(100, 999);
+    
+    // Mapeamento de dados de contato (mesmo que vazios)
+    $valor = $data['valor'] ?? 0.00;
+    $nome = $data['nome'] ?? 'Cliente MP';
+    $email = $data['email'] ?? 'sem_email_mp@bomboca.com';
+    $itens_pedido = $data['itens'] ?? [];
+    
+    // Para MP, endereço, telefone e referência ficam vazios inicialmente
+    $telefone = '';
+    $endereco = '';
+    $referencia = '';
+
+    // Tenta SALVAR O PEDIDO NO BANCO DE DADOS ANTES DE ENVIAR PARA O MP
+    if (!salvarPedido($conn, $valor, $nome, $email, $externalReference, 'Pendente de Pagamento', 'pix_cartao', $telefone, $endereco, $referencia)) {
+        $conn->close();
+        http_response_code(500);
+        die(json_encode(['success' => false, 'message' => 'Falha ao registrar pedido no BD (pré-MP).']));
     }
     
-    $pagamento = $data['forma_pagamento'] ?? 'dinheiro';
-    $externalReference = $data['external_reference'] ?? null;
+    // Tenta SALVAR OS ITENS do pedido
+    if (!salvarItensPedido($conn, $externalReference, $itens_pedido)) {
+        error_log("ATENÇÃO: Falha ao salvar itens para o pedido MP: " . $externalReference);
+        // Não encerramos o processo, mas a ausência da tabela 'pedidos_mp_itens' PODE ESTAR CAUSANDO SEU ERRO DE REDE.
+    }
+    
+    $conn->close();
+    
+    // LÓGICA DO CHECKOUT PRO
+    $client = new PreferenceClient();
+    
+    try {
+        $preference = $client->create([
+            "items" => array_map(function($item) {
+                return [
+                    "title" => $item['name'],
+                    "quantity" => $item['qty'],
+                    "unit_price" => (float)$item['price'],
+                    "currency_id" => "BRL",
+                ];
+            }, $itens_pedido),
+            "payer" => [
+                "name" => $nome,
+                "email" => $email,
+            ],
+            "external_reference" => $externalReference,
+            "back_urls" => [
+                "success" => $RETURN_URL . "?status=success&ref=" . $externalReference,
+                "pending" => $RETURN_URL . "?status=pending&ref=" . $externalReference,
+                "failure" => $RETURN_URL . "?status=failure&ref=" . $externalReference,
+            ],
+            "notification_url" => $NOTIFICATION_URL,
+            "auto_return" => "approved",
+        ]);
+        
+        echo json_encode([
+            'success' => true,
+            'redirect_url' => $preference->init_point,
+            'external_reference' => $externalReference
+        ]);
+        
+    } catch (\Exception $e) {
+        error_log("Erro Mercado Pago: " . $e->getMessage());
+        http_response_code(500);
+        echo json_encode(['success' => false, 'message' => 'Erro ao criar preferência de pagamento no Mercado Pago.']);
+    }
+} 
+
+// ====================================================\r\n
+// AÇÃO: FINALIZAR PEDIDO (DINHEIRO, DÉBITO, CRÉDITO)
+// ====================================================\r\n
+else if ($action === 'finalizar_pedido') {
+
+    $conn = db_connect();
+
+    if (!$conn) {
+        http_response_code(500);
+        die(json_encode(['success' => false, 'message' => 'Falha na conexão com o BD. Verifique db_connect.php.']));
+    }
+    
+    // Mapeamento de dados recebidos do JS
+    $pagamento = $data['forma_pagamento'] ?? 'dinheiro'; 
     $totalValorFinal = $data['total_valor_final'] ?? 0;
     
     $nome = $data['nome'] ?? 'Cliente';
     $email = $data['email'] ?? 'sem_email@bomboca.com';
-
-    // Se a forma de pagamento NÃO for PIX, registra o pedido no BD.
-    if ($pagamento !== 'pix') {
-        
-        $status = 'Aguardando Pagamento na Entrega'; 
-
-        // Se a referência for nula (sempre será para Dinheiro/Cartão), cria uma nova
-        if (empty($externalReference)) {
-            $externalReference = 'NAO-MP-' . time() . rand(100, 999);
-        }
-
-        if (!salvarPedido($conn, $totalValorFinal, $nome, $email, $externalReference, $status, $pagamento)) {
-            $conn->close();
-            http_response_code(500);
-            die(json_encode(['success' => false, 'message' => 'Falha ao registrar pedido de Dinheiro/Cartão no BD.']));
-        }
-    }
+    $telefone = $data['telefone'] ?? '';
+    $endereco = $data['endereco'] ?? '';
+    $referencia = $data['referencia'] ?? '';
+    $itens_pedido = $data['itens_pedido'] ?? [];
     
-    // NOTA: O pedido PIX/Checkout Pro JÁ ESTÁ SALVO na ação 'gerar_checkout_pro'.
+    $externalReference = 'NAO-MP-' . time() . rand(100, 999);
+    
+    $status = 'Aguardando Pagamento na Entrega'; 
+
+    // Tenta SALVAR O PEDIDO PRINCIPAL
+    if (!salvarPedido($conn, $totalValorFinal, $nome, $email, $externalReference, $status, $pagamento, $telefone, $endereco, $referencia)) {
+        $conn->close();
+        http_response_code(500);
+        die(json_encode(['success' => false, 'message' => 'Falha ao registrar pedido de Pagamento na Entrega no BD.']));
+    }
+
+    // Tenta SALVAR OS ITENS do pedido
+    if (!salvarItensPedido($conn, $externalReference, $itens_pedido)) {
+        error_log("ATENÇÃO: Falha ao salvar itens para o pedido: " . $externalReference);
+        // Este erro será tratado como um log e o pedido principal será marcado como sucesso para o cliente.
+    }
 
     $conn->close();
     
-    echo json_encode([
-        'success' => true, 
-        'message' => 'Pedido finalizado e registrado com sucesso!'
-    ]);
-    exit;
+    // Retorna SUCESSO para o JavaScript
+    echo json_encode(['success' => true, 'message' => 'Pedido finalizado com sucesso.']);
 }
 
-// Resposta padrão para qualquer requisição inválida ou desconhecida
-http_response_code(400); 
-echo json_encode(['success' => false, 'message' => 'Ação inválida.']);
+// ====================================================\r\n
+// AÇÃO INVÁLIDA
+// ====================================================\r\n
+else {
+    http_response_code(400);
+    die(json_encode(['success' => false, 'message' => 'Ação não reconhecida.']));
+}
 ?>
