@@ -1,32 +1,26 @@
 <?php
-// Configurações do Banco de Dados no InfinityFree
+// ============================================================
+// Conexão com o Banco de Dados MySQL (InfinityFree)
+// ============================================================
 
-// **ATENÇÃO: SUBSTITUA APENAS ESTAS 4 LINHAS**
-define('DB_HOST', 'sql309.infinityfree.com'); 
-define('DB_USER', 'if0_40240276');
-define('DB_PASS', 'pedro190517');
-define('DB_NAME', 'if0_40240276_pedidos_mp');
+$servername = "sql309.infinityfree.com";
+$username   = "if0_40240276";
+$password   = "pedro190517";
+$dbname     = "if0_40240276_pedidos_mp";
 
-// Função para estabelecer a conexão
-function db_connect() {
-    // Usando a classe mysqli para conexão orientada a objetos
-    $conn = new mysqli(DB_HOST, DB_USER, DB_PASS, DB_NAME);
+// Cria a conexão
+$conn = new mysqli($servername, $username, $password, $dbname);
 
-    // Verifica se houve erro de conexão
-    if ($conn->connect_error) {
-        // Registra o erro em um log do servidor (melhor que exibir na tela)
-        error_log("Erro de conexão com o banco de dados: " . $conn->connect_error);
-        
-        // Exibe uma mensagem genérica para o usuário
-        http_response_code(500); 
-        die(json_encode(['success' => false, 'message' => 'Erro interno de servidor.']));
-    }
-
-    // Define o charset para evitar problemas com acentuação
-    $conn->set_charset("utf8mb4");
-
-    return $conn;
+// Verifica falha na conexão
+if ($conn->connect_errno) {
+    http_response_code(500);
+    echo json_encode([
+        "success" => false,
+        "message" => "Erro de conexão com o banco: " . $conn->connect_error
+    ]);
+    exit;
 }
 
-// A conexão não será feita aqui. O db_connect() será chamado quando necessário.
+// Define charset para evitar erros de acentuação
+$conn->set_charset("utf8mb4");
 ?>

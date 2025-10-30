@@ -1,0 +1,18 @@
+[2025-10-26 15:46:11] Notificação Recebida:
+Array
+(
+    [action] => payment.updated
+    [api_version] => v1
+    [data] => Array
+        (
+            [id] => 123456
+        )
+
+    [date_created] => 2021-11-01T02:02:02Z
+    [id] => 123456
+    [live_mode] => 
+    [type] => payment
+    [user_id] => 526901378
+)
+
+---

@@ -1,250 +1,207 @@
 <?php
-// Arquivo: processar_pedido.php
+header('Content-Type: application/json; charset=utf-8');
+require_once 'db_connect.php';
 
-// Inclua o autoload do Composer (necessário para a SDK do Mercado Pago)
-require 'vendor/autoload.php';
-// Inclua o arquivo de conexão com o banco de dados
-require 'db_connect.php'; 
+try {
+    // ============================================================
+    // LÊ OS DADOS JSON ENVIADOS PELO FRONTEND
+    // ============================================================
+    $rawData = file_get_contents("php://input");
+    $data = json_decode($rawData, true);
 
-use MercadoPago\Client\Preference\PreferenceClient;
-use MercadoPago\MercadoPagoConfig;
-
-// Define o cabeçalho para JSON
-header('Content-Type: application/json');
-
-// Desativa a exibição de erros críticos na saída para evitar JSON inválido
-ini_set('display_errors', 0);
-ini_set('display_startup_errors', 0);
-error_reporting(E_ALL);
-
-// ====================================================\r\n
-// DADOS DE CONFIGURAÇÃO OBRIGATÓRIOS
-// ====================================================\r\n
-
-// Seu Access Token (Chave Privada)
-MercadoPagoConfig::setAccessToken('APP_USR-8765a7f1-8cd0-4412-a9d6-734e07bbe088'); 
-
-// URL pública do seu arquivo de Webhook
-$NOTIFICATION_URL = 'http://bomdeboca.wuaze.com/webhook_mp.php'; 
-
-// URL de retorno para o formulário após o pagamento
-$RETURN_URL = 'http://bomdeboca.wuaze.com/index.php';
-
-// ====================================================\r\n
-// FUNÇÕES: Salvar Pedidos no Banco de Dados
-// ====================================================\r\n
-
-/**
- * Insere um novo pedido na tabela principal 'pedidos_mp'.
- * @return bool Retorna true em sucesso, false em falha.
- */
-function salvarPedido(mysqli $conn, $valor, $nome, $email, $externalReference, $status, $pagamento, $telefone, $endereco, $referencia) {
-    // AJUSTADO PARA USAR SUA TABELA: pedidos_mp
-    $sql = "INSERT INTO pedidos_mp (external_reference, valor_total, nome_cliente, email_cliente, telefone, endereco, referencia, status, pagamento) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
-    
-    $stmt = $conn->prepare($sql);
-    if (!$stmt) {
-        error_log("Erro no prepare (salvarPedido): " . $conn->error);
-        return false;
+    if (!$data || !isset($data['action'])) {
+        throw new Exception("Requisição inválida ou parâmetro 'action' ausente.");
     }
 
-    // Assumindo que os campos existem na sua tabela pedidos_mp
-    $stmt->bind_param("sdsssssss", $externalReference, $valor, $nome, $email, $telefone, $endereco, $referencia, $status, $pagamento);
+    $action = $data['action'];
 
-    $success = $stmt->execute();
-    if (!$success) {
-        error_log("Erro ao executar (salvarPedido): " . $stmt->error);
-    }
-    
-    $stmt->close();
-    return $success;
-}
+    // ============================================================
+    // AÇÃO 1 - GERAR CHECKOUT PRO (PAGAMENTO ONLINE)
+    // ============================================================
+    if ($action === 'gerar_checkout_pro') {
+        $valor = floatval($data['valor'] ?? 0);
+        $nome = trim($data['nome'] ?? '');
+        $email = trim($data['email'] ?? '');
+        $itens = $data['itens'] ?? [];
 
-/**
- * Insere os itens detalhados do pedido na tabela 'pedidos_mp_itens'.
- * @param array $itens Array de itens do pedido (name, qty, price).
- * @return bool Retorna true em sucesso, false em falha.
- */
-function salvarItensPedido(mysqli $conn, $externalReference, array $itens) {
-    if (empty($itens)) {
-        return true; 
-    }
-    
-    $success = true;
-    // AJUSTADO PARA USAR TABELA DE ITENS: pedidos_mp_itens
-    $sql = "INSERT INTO pedidos_mp_itens (external_reference, item_nome, quantidade, preco_unitario) VALUES (?, ?, ?, ?)";
-    $stmt = $conn->prepare($sql);
-
-    if (!$stmt) {
-        error_log("Erro no prepare (salvarItensPedido): " . $conn->error);
-        // O erro de rede/servidor pode estar aqui, se a tabela não existir.
-        return false; 
-    }
-    
-    foreach ($itens as $item) {
-        $itemNome = $item['name'];
-        $quantidade = (int)$item['qty'];
-        $precoUnitario = (float)$item['price'];
-        
-        $stmt->bind_param("ssis", $externalReference, $itemNome, $quantidade, $precoUnitario); 
-        
-        if (!$stmt->execute()) {
-            error_log("Erro ao executar item: " . $stmt->error);
-            $success = false;
+        if ($valor <= 0 || empty($nome) || empty($email)) {
+            throw new Exception("Dados insuficientes para gerar o pedido.");
         }
-    }
-    
-    $stmt->close();
-    return $success;
-}
 
+        // Gera um identificador único para o pedido
+        $external_reference = uniqid('ref_', true);
 
-// ====================================================\r\n
-// LÓGICA DE REQUISIÇÃO
-// ====================================================\r\n
+        // ==============================
+        // SALVA PEDIDO NO BANCO
+        // ==============================
+        $stmt = $conn->prepare("
+            INSERT INTO pedidos (
+                external_reference, mp_payment_id, metodo_pagamento, valor,
+                nome_cliente, email_cliente, telefone, endereco, referencia, status
+            ) VALUES (?, NULL, ?, ?, ?, ?, '', '', '', ?)
+        ");
+        $metodo_pagamento = 'pix_cartao';
+        $status = 'Pendente';
 
-// Obtém os dados da requisição POST
-$input = file_get_contents('php://input');
-$data = json_decode($input, true);
+        $stmt->bind_param(
+            "ssdsss",
+            $external_reference,
+            $metodo_pagamento,
+            $valor,
+            $nome,
+            $email,
+            $status
+        );
 
-if (!isset($data['action'])) {
-    http_response_code(400);
-    die(json_encode(['success' => false, 'message' => 'Ação não especificada.']));
-}
+        if (!$stmt->execute()) {
+            throw new Exception("Erro ao salvar pedido: " . $stmt->error);
+        }
 
-$action = $data['action'];
+        // ==============================
+        // SALVA ITENS NO BANCO
+        // ==============================
+        if (!empty($itens)) {
+            $stmtItem = $conn->prepare("
+                INSERT INTO pedidos_mp_itens (external_reference, item_nome, quantidade, preco_unitario)
+                VALUES (?, ?, ?, ?)
+            ");
+            foreach ($itens as $item) {
+                $nomeItem = $item['name'] ?? '';
+                $quantidade = intval($item['qty'] ?? 0);
+                $preco = floatval($item['price'] ?? 0);
 
-// ====================================================\r\n
-// AÇÃO: GERAR CHECKOUT PRO (PIX, CARTÃO)
-// ====================================================\r\n
-if ($action === 'gerar_checkout_pro') {
-    
-    $conn = db_connect();
-    
-    if (!$conn) {
-        http_response_code(500);
-        die(json_encode(['success' => false, 'message' => 'Falha na conexão com o BD ao gerar checkout.']));
-    }
+                if ($quantidade > 0 && $nomeItem !== '') {
+                    $stmtItem->bind_param("ssid", $external_reference, $nomeItem, $quantidade, $preco);
+                    $stmtItem->execute();
+                }
+            }
+        }
 
-    $externalReference = 'MP-' . time() . rand(100, 999);
-    
-    // Mapeamento de dados de contato (mesmo que vazios)
-    $valor = $data['valor'] ?? 0.00;
-    $nome = $data['nome'] ?? 'Cliente MP';
-    $email = $data['email'] ?? 'sem_email_mp@bomboca.com';
-    $itens_pedido = $data['itens'] ?? [];
-    
-    // Para MP, endereço, telefone e referência ficam vazios inicialmente
-    $telefone = '';
-    $endereco = '';
-    $referencia = '';
+        // ==============================
+        // INTEGRAÇÃO COM MERCADO PAGO
+        // ==============================
+        require __DIR__ . '/vendor/autoload.php';
+        MercadoPago\SDK::setAccessToken("APP_USR-7170515652730920-102314-0adadb09c0bc3daf5ddf303ada8b8a05-526901378");
 
-    // Tenta SALVAR O PEDIDO NO BANCO DE DADOS ANTES DE ENVIAR PARA O MP
-    if (!salvarPedido($conn, $valor, $nome, $email, $externalReference, 'Pendente de Pagamento', 'pix_cartao', $telefone, $endereco, $referencia)) {
-        $conn->close();
-        http_response_code(500);
-        die(json_encode(['success' => false, 'message' => 'Falha ao registrar pedido no BD (pré-MP).']));
-    }
-    
-    // Tenta SALVAR OS ITENS do pedido
-    if (!salvarItensPedido($conn, $externalReference, $itens_pedido)) {
-        error_log("ATENÇÃO: Falha ao salvar itens para o pedido MP: " . $externalReference);
-        // Não encerramos o processo, mas a ausência da tabela 'pedidos_mp_itens' PODE ESTAR CAUSANDO SEU ERRO DE REDE.
-    }
-    
-    $conn->close();
-    
-    // LÓGICA DO CHECKOUT PRO
-    $client = new PreferenceClient();
-    
-    try {
-        $preference = $client->create([
-            "items" => array_map(function($item) {
-                return [
-                    "title" => $item['name'],
-                    "quantity" => $item['qty'],
-                    "unit_price" => (float)$item['price'],
-                    "currency_id" => "BRL",
-                ];
-            }, $itens_pedido),
-            "payer" => [
-                "name" => $nome,
-                "email" => $email,
-            ],
-            "external_reference" => $externalReference,
-            "back_urls" => [
-                "success" => $RETURN_URL . "?status=success&ref=" . $externalReference,
-                "pending" => $RETURN_URL . "?status=pending&ref=" . $externalReference,
-                "failure" => $RETURN_URL . "?status=failure&ref=" . $externalReference,
-            ],
-            "notification_url" => $NOTIFICATION_URL,
-            "auto_return" => "approved",
-        ]);
-        
+        $preference = new MercadoPago\Preference();
+
+        $mpItems = [];
+        foreach ($itens as $item) {
+            $mpItem = new MercadoPago\Item();
+            $mpItem->title = $item['name'];
+            $mpItem->quantity = intval($item['qty']);
+            $mpItem->unit_price = floatval($item['price']);
+            $mpItems[] = $mpItem;
+        }
+
+        $preference->items = $mpItems;
+        $preference->external_reference = $external_reference;
+
+        // ============================================================
+        // USANDO UMA ÚNICA PÁGINA DE RETORNO PARA TODOS OS STATUS
+        // ============================================================
+        $retorno_url = "https://seusite.com/retorno_mercadopago.php"; // substitua pelo seu domínio real
+        $preference->back_urls = [
+            "success" => $retorno_url,
+            "failure" => $retorno_url,
+            "pending" => $retorno_url
+        ];
+        $preference->auto_return = "approved";
+
+        $preference->save();
+
+        $redirectUrl = $preference->init_point;
+
         echo json_encode([
             'success' => true,
-            'redirect_url' => $preference->init_point,
-            'external_reference' => $externalReference
+            'message' => 'Checkout Pro gerado com sucesso.',
+            'redirect_url' => $redirectUrl,
+            'external_reference' => $external_reference
         ]);
-        
-    } catch (\Exception $e) {
-        error_log("Erro Mercado Pago: " . $e->getMessage());
-        http_response_code(500);
-        echo json_encode(['success' => false, 'message' => 'Erro ao criar preferência de pagamento no Mercado Pago.']);
-    }
-} 
-
-// ====================================================\r\n
-// AÇÃO: FINALIZAR PEDIDO (DINHEIRO, DÉBITO, CRÉDITO)
-// ====================================================\r\n
-else if ($action === 'finalizar_pedido') {
-
-    $conn = db_connect();
-
-    if (!$conn) {
-        http_response_code(500);
-        die(json_encode(['success' => false, 'message' => 'Falha na conexão com o BD. Verifique db_connect.php.']));
-    }
-    
-    // Mapeamento de dados recebidos do JS
-    $pagamento = $data['forma_pagamento'] ?? 'dinheiro'; 
-    $totalValorFinal = $data['total_valor_final'] ?? 0;
-    
-    $nome = $data['nome'] ?? 'Cliente';
-    $email = $data['email'] ?? 'sem_email@bomboca.com';
-    $telefone = $data['telefone'] ?? '';
-    $endereco = $data['endereco'] ?? '';
-    $referencia = $data['referencia'] ?? '';
-    $itens_pedido = $data['itens_pedido'] ?? [];
-    
-    $externalReference = 'NAO-MP-' . time() . rand(100, 999);
-    
-    $status = 'Aguardando Pagamento na Entrega'; 
-
-    // Tenta SALVAR O PEDIDO PRINCIPAL
-    if (!salvarPedido($conn, $totalValorFinal, $nome, $email, $externalReference, $status, $pagamento, $telefone, $endereco, $referencia)) {
-        $conn->close();
-        http_response_code(500);
-        die(json_encode(['success' => false, 'message' => 'Falha ao registrar pedido de Pagamento na Entrega no BD.']));
+        exit;
     }
 
-    // Tenta SALVAR OS ITENS do pedido
-    if (!salvarItensPedido($conn, $externalReference, $itens_pedido)) {
-        error_log("ATENÇÃO: Falha ao salvar itens para o pedido: " . $externalReference);
-        // Este erro será tratado como um log e o pedido principal será marcado como sucesso para o cliente.
+    // ============================================================
+    // AÇÃO 2 - FINALIZAR PEDIDO (DINHEIRO / CARTÃO NA ENTREGA)
+    // ============================================================
+    if ($action === 'finalizar_pedido') {
+        $nome = trim($data['nome'] ?? '');
+        $email = trim($data['email'] ?? '');
+        $telefone = trim($data['telefone'] ?? '');
+        $endereco = trim($data['endereco'] ?? '');
+        $referencia = trim($data['referencia'] ?? '');
+        $valor = floatval($data['total_valor_final'] ?? 0);
+        $forma_pagamento = trim($data['forma_pagamento'] ?? '');
+        $itens = $data['itens_pedido'] ?? [];
+
+        if (empty($nome) || empty($forma_pagamento) || $valor <= 0) {
+            throw new Exception("Dados insuficientes para salvar o pedido.");
+        }
+
+        $external_reference = uniqid('ref_', true);
+        $status = 'Pendente';
+
+        $stmt = $conn->prepare("
+            INSERT INTO pedidos (
+                external_reference, mp_payment_id, metodo_pagamento, valor,
+                nome_cliente, email_cliente, telefone, endereco, referencia, status
+            ) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)
+        ");
+
+        $stmt->bind_param(
+            "ssdssssss",
+            $external_reference,
+            $forma_pagamento,
+            $valor,
+            $nome,
+            $email,
+            $telefone,
+            $endereco,
+            $referencia,
+            $status
+        );
+
+        if (!$stmt->execute()) {
+            throw new Exception("Erro ao salvar pedido: " . $stmt->error);
+        }
+
+        if (!empty($itens)) {
+            $stmtItem = $conn->prepare("
+                INSERT INTO pedidos_mp_itens (external_reference, item_nome, quantidade, preco_unitario)
+                VALUES (?, ?, ?, ?)
+            ");
+
+            foreach ($itens as $item) {
+                $nomeItem = $item['name'] ?? '';
+                $quantidade = intval($item['qty'] ?? 0);
+                $preco = floatval($item['price'] ?? 0);
+
+                if ($quantidade > 0 && $nomeItem !== '') {
+                    $stmtItem->bind_param("ssid", $external_reference, $nomeItem, $quantidade, $preco);
+                    $stmtItem->execute();
+                }
+            }
+        }
+
+        echo json_encode([
+            'success' => true,
+            'message' => 'Pedido salvo com sucesso.',
+            'external_reference' => $external_reference
+        ]);
+        exit;
     }
 
-    $conn->close();
-    
-    // Retorna SUCESSO para o JavaScript
-    echo json_encode(['success' => true, 'message' => 'Pedido finalizado com sucesso.']);
-}
+    // ============================================================
+    // AÇÃO DESCONHECIDA
+    // ============================================================
+    throw new Exception("Ação não reconhecida: $action");
 
-// ====================================================\r\n
-// AÇÃO INVÁLIDA
-// ====================================================\r\n
-else {
-    http_response_code(400);
-    die(json_encode(['success' => false, 'message' => 'Ação não reconhecida.']));
+} catch (Exception $e) {
+    http_response_code(500);
+    echo json_encode([
+        'success' => false,
+        'message' => $e->getMessage()
+    ]);
+    exit;
 }
 ?>
